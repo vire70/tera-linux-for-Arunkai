@@ -22,7 +22,7 @@ not work reliably.
 ## Building
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/tera-linux-for-Arunkai.git
+git clone https://github.com/vire70/tera-linux-for-Arunkai.git
 cd tera-linux-for-Arunkai/appimage
 
 podman build -t tera-builder .
