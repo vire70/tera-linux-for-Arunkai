@@ -414,6 +414,117 @@ static size_t write_callback(const void *contents, size_t size, size_t nmemb,
  * @param out Pointer to the LoginData structure to store results.
  * @return true if login is successful, false otherwise.
  */
+
+/* ---- Arun Kai server: multi-step login helpers ---- */
+
+typedef struct {
+  char *data;
+  size_t size;
+} ak_buf;
+
+static size_t ak_write_cb(void *contents, const size_t size, const size_t nmemb,
+                          void *userp) {
+  const size_t total = size * nmemb;
+  ak_buf *buf = userp;
+  char *grown = realloc(buf->data, buf->size + total + 1);
+  if (!grown)
+    return 0;
+  buf->data = grown;
+  memcpy(buf->data + buf->size, contents, total);
+  buf->size += total;
+  buf->data[buf->size] = '\0';
+  return total;
+}
+
+/* Swaps "LoginAction" in base_url for another action name, keeping any query
+ * string that follows it. */
+static bool ak_action_url(const char *base_url, const char *action, char *out,
+                          const size_t out_sz) {
+  const char *hit = strstr(base_url, "LoginAction");
+  if (!hit)
+    return false;
+  const int n = snprintf(out, out_sz, "%.*s%s%s", (int)(hit - base_url),
+                         base_url, action, hit + strlen("LoginAction"));
+  return n > 0 && (size_t)n < out_sz;
+}
+
+/* True if the JSON reply says Return:true and Msg:"success". */
+static bool ak_reply_ok(const json_t *root) {
+  const json_t *ret = json_object_get(root, "Return");
+  const json_t *msg = json_object_get(root, "Msg");
+  return json_is_true(ret) && json_is_string(msg) &&
+         strcmp(json_string_value(msg), "success") == 0;
+}
+
+/* GETs a URL on the already-logged-in handle. Returns parsed JSON (caller must
+ * json_decref it) or NULL. */
+static json_t *ak_get_json(CURL *curl, const char *url) {
+  ak_buf buf = {NULL, 0};
+  json_t *root = NULL;
+
+  curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, ak_write_cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&buf);
+
+  if (curl_easy_perform(curl) == CURLE_OK) {
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (http_code == 200 && buf.data) {
+      json_error_t jerr;
+      root = json_loads(buf.data, 0, &jerr);
+    }
+  }
+  free(buf.data);
+  return root;
+}
+
+/* After LoginAction succeeds, collects UserNo, AuthKey and CharacterCount from
+ * the three follow-up calls the server's own web launcher makes. */
+static bool ak_fetch_session_data(CURL *curl, const char *login_url,
+                                  char *user_no, const size_t user_no_sz,
+                                  char *auth_key, const size_t auth_key_sz,
+                                  char *char_count, const size_t char_count_sz) {
+  char url[512];
+  bool ok = false;
+  json_t *info = NULL;
+  json_t *key = NULL;
+  json_t *cnt = NULL;
+
+  if (ak_action_url(login_url, "GetAccountInfoAction", url, sizeof(url)))
+    info = ak_get_json(curl, url);
+  if (ak_action_url(login_url, "GetAuthKeyAction", url, sizeof(url)))
+    key = ak_get_json(curl, url);
+  if (ak_action_url(login_url, "GetCharacterCountAction", url, sizeof(url)))
+    cnt = ak_get_json(curl, url);
+
+  if (info && key && cnt && ak_reply_ok(info) && ak_reply_ok(key) &&
+      ak_reply_ok(cnt)) {
+    const json_t *jUserNo = json_object_get(info, "UserNo");
+    const json_t *jAuthKey = json_object_get(key, "AuthKey");
+    const json_t *jCharCnt = json_object_get(cnt, "CharacterCount");
+
+    if (json_is_true(json_object_get(info, "Banned"))) {
+      g_warning("This account is banned.");
+    } else if (json_is_number(jUserNo) && json_is_string(jAuthKey)) {
+      snprintf(user_no, user_no_sz, "%.0f", json_number_value(jUserNo));
+      snprintf(auth_key, auth_key_sz, "%s", json_string_value(jAuthKey));
+      snprintf(char_count, char_count_sz, "%s",
+               json_is_string(jCharCnt) ? json_string_value(jCharCnt) : "0");
+      ok = true;
+    } else {
+      g_warning("Invalid JSON structure for session data.");
+    }
+  } else {
+    g_warning("Logged in, but could not fetch account details from the server.");
+  }
+
+  json_decref(info);
+  json_decref(key);
+  json_decref(cnt);
+  return ok;
+}
+
 static bool do_login(const char *username, const char *password,
                      LoginData *out) {
   CURL *curl = curl_easy_init();
@@ -435,82 +546,69 @@ static bool do_login(const char *username, const char *password,
       headers,
       "Content-Type: application/x-www-form-urlencoded; charset=UTF-8");
 
-  // Prepare POST data
+  // The server ties the follow-up calls to the login session, so keep cookies.
+  curl_easy_setopt(curl, CURLOPT_COOKIEFILE, "");
+  headers = curl_slist_append(headers, "X-Requested-With: XMLHttpRequest");
+
+  // Prepare POST data (credentials must be URL-encoded)
+  char *esc_user = curl_easy_escape(curl, username, 0);
+  char *esc_pass = curl_easy_escape(curl, password, 0);
   char postfields[FIXED_STRING_FIELD_SZ];
-  size_t required;
+  size_t required = 0;
   bool success =
+      esc_user && esc_pass &&
       str_copy_formatted(postfields, &required, FIXED_STRING_FIELD_SZ,
-                         "login=%s&password=%s", username, password);
+                         "login=%s&password=%s", esc_user, esc_pass);
+  curl_free(esc_user);
+  curl_free(esc_pass);
+
   if (!success) {
-    g_error(
-        "Failed to allocate %zu bytes for postfields into buffer of %zu bytes.",
-        required, FIXED_STRING_FIELD_SZ);
-  }
+    g_warning("Could not build the login request (%zu bytes needed, buffer is "
+              "%zu).",
+              required, (size_t)FIXED_STRING_FIELD_SZ);
+  } else {
+    // Set cURL options
+    curl_easy_setopt(curl, CURLOPT_URL, auth_url_global);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
 
-  // Set cURL options
-  curl_easy_setopt(curl, CURLOPT_URL, auth_url_global);
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-
-  // Perform the request
-  CURLcode res = curl_easy_perform(curl);
-  success = false;
-  if (res == CURLE_OK) {
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    if (http_code == 200) {
-      // Parse JSON response
-      json_error_t jerr;
-      json_t *root = json_loads(chunk.data, 0, &jerr);
-      if (root) {
-        json_t *jReturn = json_object_get(root, "Return");
-        json_t *jMsg = json_object_get(root, "Msg");
-        if (json_is_boolean(jReturn) && json_is_string(jMsg)) {
-          const bool retVal = json_boolean_value(jReturn);
-          const char *msg = json_string_value(jMsg);
-          if (retVal && strcmp(msg, "success") == 0) {
-            // Extract additional data
-            json_t *jUserNo = json_object_get(root, "UserNo");
-            json_t *jAuthKey = json_object_get(root, "AuthKey");
-            json_t *jCharCnt = json_object_get(root, "CharacterCount");
-
-            if (json_is_number(jUserNo) && json_is_string(jAuthKey)) {
-              const double userNoVal = json_number_value(jUserNo);
-              const char *authKey = json_string_value(jAuthKey);
-              const char *charCnt =
-                  json_is_string(jCharCnt) ? json_string_value(jCharCnt) : "0";
-
-              snprintf(out->user_no, sizeof(out->user_no), "%.0f", userNoVal);
-              strncpy(out->auth_key, authKey, sizeof(out->auth_key) - 1);
-              strncpy(out->character_count, charCnt,
-                      sizeof(out->character_count) - 1);
-              out->user_no[sizeof(out->user_no) - 1] = '\0';
-              out->auth_key[sizeof(out->auth_key) - 1] = '\0';
-              out->character_count[sizeof(out->character_count) - 1] = '\0';
-              success = true;
-            } else {
-              g_warning("Invalid JSON structure for login data.");
-            }
+    // Perform the login request
+    CURLcode res = curl_easy_perform(curl);
+    success = false;
+    if (res == CURLE_OK) {
+      long http_code = 0;
+      curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+      if (http_code == 200) {
+        // Parse JSON response
+        json_error_t jerr;
+        json_t *root = json_loads(chunk.data, 0, &jerr);
+        if (root) {
+          if (ak_reply_ok(root)) {
+            // Login accepted: now fetch UserNo / AuthKey / CharacterCount
+            success = ak_fetch_session_data(
+                curl, auth_url_global, out->user_no, sizeof(out->user_no),
+                out->auth_key, sizeof(out->auth_key), out->character_count,
+                sizeof(out->character_count));
           } else {
-            const char *reason =
-                json_string_value(json_object_get(root, "Msg"));
-            g_warning("Login failure: %s", reason ? reason : "Unknown");
+            const json_t *jMsg = json_object_get(root, "Msg");
+            g_warning("Login failure: %s",
+                      json_is_string(jMsg) ? json_string_value(jMsg)
+                                           : "Unknown");
           }
+          json_decref(root);
+        } else {
+          g_warning("JSON parse error: %s", jerr.text);
         }
-        json_decref(root);
       } else {
-        g_warning("JSON parse error: %s", jerr.text);
+        g_warning("HTTP response code: %ld", http_code);
       }
     } else {
-      g_warning("HTTP response code: %ld", http_code);
+      g_warning("cURL perform failed: %s", curl_easy_strerror(res));
     }
-  } else {
-    g_warning("cURL perform failed: %s", curl_easy_strerror(res));
   }
-
   // Clean up
   curl_easy_cleanup(curl);
   curl_slist_free_all(headers);
@@ -1777,7 +1875,7 @@ static gchar **build_wine_environment(const gchar *custom_wine_dir,
   else
     g_free(resolved_wine);
 
-  envp = g_environ_setenv(envp, "WINEDEBUG", "-all", true);
+  envp = g_environ_setenv(envp, "WINEDEBUG", "err+all,fixme+all", true);
   envp = g_environ_setenv(envp, "WINEARCH", "win64", true);
   envp = g_environ_setenv(envp, "DXVK_LOG_LEVEL", "none", true);
 
@@ -1903,8 +2001,8 @@ static bool prepare_wineprefix(gchar **envp, UpdateThreadData *thread_data) {
   GPtrArray *argv = g_ptr_array_new();
   g_ptr_array_add(argv, g_strdup(winetricks));
   g_ptr_array_add(argv, g_strdup("-q"));
-  g_ptr_array_add(argv, g_strdup("vkd3d"));
-  g_ptr_array_add(argv, g_strdup("corefonts"));
+  //g_ptr_array_add(argv, g_strdup("vkd3d"));
+  //g_ptr_array_add(argv, g_strdup("corefonts"));
   g_ptr_array_add(argv, g_strdup("vcrun2022"));
   g_ptr_array_add(argv, g_strdup("ucrtbase2019"));
   g_ptr_array_add(argv, g_strdup("dxvk"));
@@ -2053,8 +2151,18 @@ static gpointer game_launcher_thread(gpointer data) {
   } else {
     game_base = cwd;
   }
+
+/* Wine's CreateProcessA needs a fully backslashed Windows path; game_base
+ * is a Unix path, so convert separators before building the final string. */
+  char win_game_base[FIXED_STRING_FIELD_SZ];
+  size_t i;
+  for (i = 0; game_base[i] != '\0' && i < sizeof(win_game_base) - 1; i++) {
+    win_game_base[i] = (game_base[i] == '/') ? '\\' : game_base[i];
+  }
+  win_game_base[i] = '\0';
+
   if (!str_copy_formatted(game_path, &need, sizeof game_path,
-                          "Z:%s\\Binaries\\TERA.exe", game_base)) {
+                          "Z:%s\\Binaries\\TERA.exe", win_game_base)) {
     g_warning("Path buffer too small; need %zu bytes", need);
     thread_data->current_progress = 1.0;
     thread_data->current_message = "Failed to Launch Game";
@@ -2071,6 +2179,7 @@ static gpointer game_launcher_thread(gpointer data) {
     free(launch_data);
     return nullptr;
   }
+  g_message("DEBUG game_path final value: [%s]", game_path);
 
   gchar *cwd_g = g_get_current_dir();
   gchar *stub_path = nullptr;

@@ -1,16 +1,21 @@
 {
-  "auth_url": "http://server.terastarscape.com:81/tera/LauncherLoginAction",
-  "public_patch_url": "http://server.terastarscape.com:81/public/patch",
-  "public_launcher_assets_url": "http://server.terastarscape.com:81/public/launcher/images",
-  "server_list_url": "http://server.terastarscape.com:81/tera/ServerList?lang=en",
-  "wine_prefix_name": ".terastarscape/wineprefix",
-  "game_prefix_name": ".terastarscape/files",
-  "config_prefix_name": ".terastarscape/config",
-  "torrent_download_enabled": true,
-  "torrent_prefix_name": ".terastarscape/torrent",
-  "torrent_magnet_link": "magnet:?xt=urn:btih:RHBA7LDWYCWIQDBBGN7PZBBEMZWVLA7X&dn=TERA%20Starscape.zip&xl=63357892348&tr=udp%3A%2F%2Ftracker.openbittorrent.com%3A80%2Fannounce&tr=udp%3A%2F%2Ftracker.openbittorrent.com%3A80%2Fannounce&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce",
-  "torrent_payload_file_name": "TERA Starscape.zip",
+  "auth_url": "http://51.79.230.58:8090/launcher/LoginAction?locale=en-GB&secure=false",
+  "public_patch_url": "http://51.79.230.58:8090/public/patch",
+  "public_launcher_assets_url": "http://51.79.230.58:8090/public/launcher/images",
+  "server_list_url": "http://51.79.230.58:8090/tera/ServerList?lang=en",
+
+  "wine_prefix_name": ".arunkai-tera/wineprefix",
+  "config_prefix_name": ".arunkai-tera/config",
+  "game_prefix_name": ".arunkai-tera/files",
+
+  "torrent_download_enabled": false,
+  "torrent_prefix_name": ".arunkai-tera/torrent",
+  "torrent_magnet_link": "",
+  "torrent_payload_file_name": "",
+
   "game_lang": "EUR",
+  "service_name": "Arun Kai",
+
   "public_launcher_assets": [
     "bg.jpg",
     "bg.png",
@@ -23,6 +28,5 @@
     "ico.png",
     "logo.png",
     "repair-btn.png"
-  ],
-  "service_name": "TERA Starscape"
+  ]
 }
