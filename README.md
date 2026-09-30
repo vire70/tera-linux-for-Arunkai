@@ -1,362 +1,102 @@
-# OUT OF SUPPORT UNTIL FURTHER NOTICE
+# TERA Linux Launcher — Arun Kai Edition
 
-Unfortunately, I do not have the time to update this version of the launcher any further. I do have another project in the works, but I don't see it being completed any time soon.
+A native Linux launcher for the **Arun Kai** TERA private server, forked from
+[PopusBenedictus/tera-launcher-for-linux](https://github.com/PopusBenedictus/tera-launcher-for-linux)
+(archived, WTFPL license). This fork bundles a working `launcher-config.json`
+for Arun Kai and fixes several issues that prevented the original from
+working against this specific server.
 
-If you're interested in developing your own launcher, go look at the "TERA API" project for API reference for launcher API specs. You can also use the "stub" from this project 
-pretty much as is to handle the Win32 comms with the TERA game client. That part has to run in the same environment as the game.
+## What this gets you
 
-I will continue to update it for TERA Starscape, delivered as an AppImage as breakages occur. If/when I finish the other project I will push up a separate project repository for that.
+Login, patch-checking, and launching TERA (v100.02 client) through Wine —
+no need to run the Windows `ARK TERA.exe` launcher under Wine, which does
+not work reliably.
 
-# TERA Launcher for Linux
+## Requirements
 
-A community-created Linux launcher for TERA Online. This project is a **port** (in the loosest terms imaginable) of a closed-source TERA launcher ([original here](https://github.com/justkeepquiet/tera-launcher)) designed to work on retail servers. It utilizes the original launcher's graphical assets to provide a comparable experience for Linux users. By integrating Wine, it allows you to launch the TERA Online game client seamlessly on various Linux distributions.
-
-> **Note about support:** Use the *officially provided launcher for the TERA Online service you are using* **unless** it does not work on Linux. Likewise, do not direct support requests for this launcher to the maintainers of said service.
->
-> This is maintained by a single person in their spare time. Expect delays if you inquire about bugs or ask questions, but I will respond as time allows.
-
-> **Disclaimer:** This launcher is in the it-will-probably-work-but-is-quirked-up phase of development. It will continue to see improvements—probably! As this launcher depends on third-party graphical assets and its target TERA server is baked in at compile time, we will *not* be distributing binaries.
-
-> **Not officially supported:** This is **not** an officially supported launcher by the publishers of TERA Online. This software is provided for **educational and convenience purposes only**, and **users must respect TERA Online’s Terms of Service** and any other policies set by the game’s publishers.
-
----
-
-## Table of Contents
-
-* [Features](#features)
-* [Dependencies and Requirements](#dependencies-and-requirements)
-* [Docker Installation](#docker-installation)
-* [Building](#building)
-    * [AppImage Mode (Recommended)](#appimage-mode-recommended)
-        * [Optional Build Parameters](#optional-build-parameters)
-    * [Standard Build (Option 2)](#standard-build-option-2)
-* [Configuring ](#configuring-launcher-configjson)[`launcher-config.json`](#configuring-launcher-configjson)
-* [Where the Binaries Go](#where-the-binaries-go)
-* [Usage](#usage)
-* [License](#license)
-* [Disclaimer](#disclaimer)
-
----
-
-## Features
-
-* Seamlessly launches TERA Online on Linux via Wine (see **Usage** for details).
-* Imports the original launcher's graphical assets to mimic its look and feel.
-* Automatic game client patching and update checks.
-* Modular build using CMake and subprojects for easy maintenance.
-
-## Dependencies and Requirements
-
-To build and run this launcher natively, you will need:
-
-* **just** command runner
-* **CMake** (version 3.16 or later)
-* A **C compiler** (e.g., `gcc`) and build tools (such as `make`)
-* **winegcc** (for building the stub‑launcher component)
-* **winetricks**, along with **cabextract**, **unzip** and **p7zip** to support it
-* **bsdtar** for game files extraction when torrent download is enabled
-* **Python 3** (used by a custom asset‑fetching script)
-* **GTK4** development libraries
-* **libcurl** development libraries
-* **OpenSSL** development libraries
-* **SQLite3** development libraries
-* **jansson** development libraries
-* **libprotobuf‑c** development libraries
-* **MiniXML** development libraries
-* **libsecret‑1** development libraries (for secure password storage; if no secrets provider is available, password storage will be disabled—see “Password Storage” below)
-* **libtorrent‑rasterbar** development libraries (for the built‑in torrent download feature)
-* **Boost** development libraries (at least `system` and `filesystem` components)
-* An internet connection (for asset fetching)
-
-An optional Nix shell with all dependencies is provided. The shell adds build executables to `PATH` (e.g., `gcc`, `cmake`) and development libraries to CMake env vars (e.g., `CMAKE_LIBRARY_PATH`, `CMAKE_INCLUDE_PATH`) automatically.
-
-Install Nix with the [Determinate Nix Installer](https://github.com/DeterminateSystems/nix-installer).
-
-The Nix shell subprocess can be started with `nix develop`.
-
-Alternatively, install [direnv](https://direnv.net/#basic-installation) to automatically load and unload the Nix shell variables in your current shell when `cd`-ing in and out of the project (with its shell hook) or when opening a project in editors (with its [editor integration](https://github.com/direnv/direnv/wiki#editor-integration)).
-
-This has been tested to build on:
-
-* Nix shell on most Linux distributions
-* Ubuntu 24.04 LTS
-* Fedora 42 Workstation
-* Arch Linux
-
-> **Note:** If you only intend to build via **AppImage Mode**, you do **not** need to install these host dependencies locally— the Docker container provides all necessary tools and libraries.
-
-### Nix Shell
-
-Without direnv:
-
-```bash
-# clone
-git clone https://github.com/PopusBenedictus/tera-launcher-for-linux.git
-
-cd tera-launcher-for-linux
-
-# start Nix Bash subshell
-nix develop
-
-# develop
-
-# ctrl + D to exit Nix Bash subshell
-```
-
-With direnv:
-
-```bash
-# clone
-git clone https://github.com/PopusBenedictus/tera-launcher-for-linux.git
-
-# direnv applies Nix shell env vars to current shell (no subprocess)
-cd tera-launcher-for-linux
-
-# develop
-
-# direnv unloads Nix shell env vars
-cd ..
-```
-
-### Ubuntu/Debian‑based
-
-```bash
-sudo apt update
-sudo apt install build-essential cmake wine libwine-dev \
-                 python3 python3-pip python3-setuptools \
-                 libgtk-4-dev libcurl4-openssl-dev libssl-dev \
-                 libsqlite3-dev libjansson-dev libprotobuf-c-dev \
-                 libmxml-dev pkg-config git winetricks libarchive-tools \
-                 libsecret-1-dev libtorrent-rasterbar-dev \
-                 libboost-system-dev libboost-filesystem-dev
-```
-
-### Fedora/RHEL‑based
-
-```bash
-sudo dnf install gcc gcc-c++ cmake make wine-devel \
-                 python3 python3-pip python3-setuptools \
-                 gtk4-devel libcurl-devel openssl-devel \
-                 sqlite-devel jansson-devel protobuf-c-devel \
-                 mxml-devel pkg-config git winetricks libarchive \
-                 libsecret-devel libtorrent-rasterbar-devel \
-                 boost-devel
-```
-
-### Arch Linux
-
-```bash
-sudo pacman -S base-devel cmake wine \
-             python python-pip winetricks \
-             gtk4 curl openssl sqlite jansson \
-             protobuf-c mxml pkgconf git  libarchive \
-             libsecret libtorrent-rasterbar boost
-```
-
----
-
-## Docker Installation
-
-If you be doing an AppImage build, you will need Docker. Follow the official instructions for your distribution:
-
-* **Ubuntu 24.04**: [https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
-* **Fedora**: [https://docs.docker.com/engine/install/fedora/](https://docs.docker.com/engine/install/fedora/)
-* **Arch Linux**: [https://wiki.archlinux.org/title/Docker](https://wiki.archlinux.org/title/Docker)
-
-I cannot offer support for installing or configuring Docker itself. **Use online documentation to figure out such things on your own.**
-
-Support for **the build script** and **the build image** and build failures in an otherwise properly configured Docker configuration are however something I can support.
-
----
+- A working install of **[podman](https://podman.io/)** (or Docker — swap
+  `podman` for `docker` in the commands below)
+- The unpacked TERA v100.02 client game files somewhere on disk (~67GB)
+- Roughly 500MB free for the built AppImage (it bundles GE-Proton)
 
 ## Building
 
-You can build this launcher in **two** ways. **AppImage Mode** is the **recommended** approach for cross‑distro convenience.
-
-### AppImage Mode (Recommended)
-
-> **Requirement:** The resulting AppImage will **not** work on Linux distros whose GLIBC < 2.38.
-
-1. **Clone** the repository as usual:
-
-   ```bash
-   git clone https://github.com/PopusBenedictus/tera-launcher-for-linux.git
-   cd tera-launcher-for-linux
-   ```
-
-2. **Enter** the AppImage build directory and build the Docker image:
-
-   ```bash
-   cd appimage
-   docker build -t tera-builder .
-   ```
-
-3. **Generate** the AppImage:
-
-   ```bash
-   docker run --rm -it \
-     -v "$(pwd)/..:/src" \
-     -w /src/appimage \
-     tera-builder bash -lc "./build-appimage.sh"
-   ```
-
-   After completion, you’ll find `TERA_Launcher_for_Linux-x86_64.AppImage` in the project root.
-
-#### Optional Build Parameters
-
-The `build-appimage.sh` script supports customization via environment variables:
-
-* `REPO_URL` — Repository URL to clone (default: host mount)
-* `BRANCH` — Git branch to build (default: `main`)
-* `CLONE_REPO` — `1` to clone inside container instead of mounting (default: `0`)
-* `GE_PROTON_VERSION` — Proton GE version (default: `GE-Proton10-7`)
-
-**Example:** Build from branch `dev` using GE-Proton v10.8
-
 ```bash
-docker run --rm -it \
-  -v "$(pwd)/..:/src" \
-  -w /src/appimage \
-  -e BRANCH=dev \
-  -e GE_PROTON_VERSION=GE-Proton10-8 \
-  tera-builder bash -lc "./build-appimage.sh"
+git clone https://github.com/YOUR_USERNAME/tera-linux-for-Arunkai.git
+cd tera-linux-for-Arunkai/appimage
+
+podman build -t tera-builder .
+podman run --rm -it -v "$(pwd)/..:/src:Z" -w /src/appimage tera-builder bash -lc "./build-appimage.sh"
 ```
 
-### Standard Build (Option 2)
+This will take a while the first time (downloads a toolchain and GE-Proton
+inside the container). When it finishes, `TERA_Launcher_for_Linux-x86_64.AppImage`
+will be sitting in the repo root.
 
-Follow the original CMake-based instructions:
+## First-time setup
 
-1. **Clone** and configure your `launcher-config.json`:
-
-   ```bash
-   git clone https://github.com/PopusBenedictus/tera-launcher-for-linux.git
-   cd tera-launcher-for-linux
-   # edit launcher-config.json as needed
-   ```
-
-2. **Build**:
-
-   ```bash
-   just build
-   ```
-
----
-
-## Configuring `launcher-config.json`
-
-Before building, populate **all** values (except `public_launcher_assets`) in your `launcher-config.json` (values shown here are **generic**—replace with your own URLs and paths):
-
-```json
-{
-  "auth_url":                   "http://your.server/LauncherLoginAction",
-  "public_patch_url":           "http://your.server/public/patch",
-  "public_launcher_assets_url": "http://your.server/public/launcher/images",
-  "server_list_url":            "http://your.server/ServerList?lang=en",
-
-  "wine_prefix_name":      ".yourapp/wineprefix",
-  "config_prefix_name":    ".yourapp/config",
-  "game_prefix_name":      ".yourapp/files",
-  "torrent_download_enabled":    true,
-  "torrent_prefix_name":         ".yourapp/torrent",
-  "torrent_magnet_link":         "magnet:?xt=urn:btih:YOUR_HASH&dn=Game.zip&tr=udp://tracker.openbittorrent.com:80/announce",
-  "torrent_payload_file_name":   "GameFiles.zip",
-  "game_lang":                   "EUR",
-
-  "public_launcher_assets": [
-    "bg.jpg",
-    "btn-auth.png",
-    "logo.png",
-    "..."
-  ],
-
-  "service_name": "Your TERA Server"
-}
-```
-
-> **Torrent feature note:**
->
-> * You **must** supply a **single ZIP file** (as `torrent_payload_file_name`) containing your game files.
-> * **Inside that ZIP**, all game files must live under **one top‑level folder** (e.g. `GameFiles/…`) for extraction to work correctly.
-
-> **AppImage feature note:**
->
-> When using the AppImage version of the launcher, `game_prefix_name` is ignored; `wine_prefix_name`, `torrent_prefix_name` and `config_prefix_name` are still honored. These are relative paths from your home directory.
-
----
-
-## Where the Binaries Go
-
-* **Standard build:** Binaries appear in `build/bin`. Copy them next to your game client:
-
-  ```bash
-  cp build/bin/* /path/to/TERA_game_folder/
-  ```
-
-* **AppImage build:** The single `.AppImage` contains everything. Make it executable and run:
-
-  ```bash
-  chmod +x TERA_Launcher_for_Linux-x86_64.AppImage
-  ./TERA_Launcher_for_Linux-x86_64.AppImage
-  ```
-
----
-
-## Usage
-
-### Standard launcher
-
+1. Make it executable and run it once, so it creates its config folder:
 ```bash
-./tera_launcher_for_linux
+   chmod +x TERA_Launcher_for_Linux-x86_64.AppImage
+   ./TERA_Launcher_for_Linux-x86_64.AppImage
 ```
+   Close it after it opens — this step just generates
+   `~/.arunkai-tera/config/tera-launcher-config.ini`.
 
-### AppImage launcher
-
-```bash
-chmod +x TERA_Launcher_for_Linux-x86_64.AppImage
-./TERA_Launcher_for_Linux-x86_64.AppImage
+2. Edit that file and point `gameprefix` at the folder **containing**
+   `Binaries/` in your TERA install — for example:
+```ini
+   gameprefix=/path/to/your/TERA
 ```
+   (Not the `Binaries` folder itself — the folder that
+   directly contains `Binaries`.)
 
----
+3. Run the AppImage again, log in with your Arun Kai account, and hit **Play**.
 
-### How to disable download via Torrent
+## Notes
 
-In some circumstances, torrent downloads may be hindered or blocked on networks hostile to them. To address this, you may use the following ENV toggle to suppress base game file downloads via torrent if the client you are using was configured with it enabled:
+- **Every launch runs a dependency-install pass** (winetricks, vcrun2022, etc.) 
+  before starting the game — this is normal and can take
+  up to a minute, even after the prefix is fully set up, since winetricks
+  re-checks each time.
+- The prefix and game files live under `~/.arunkai-tera/` by default
+  (`wineprefix/`, `files/` — unused since `gameprefix` overrides it, and
+  `config/`).
+- If the game exits immediately after "Launching the Game" the very first
+  time you press Play, try Play again — the first run sometimes finishes
+  installing a required runtime file right as the game tries to start.
+  Second attempts onward should be consistent.
 
-```bash
-export TL4L_DISABLE_TORRENT_DOWNLOAD=1
-```
+## Changes from upstream
 
-### Password Storage
+The original project assumes a single-call login endpoint
+(`LauncherLoginAction`). Arun Kai's server uses a different, multi-step
+flow, so this fork's `gui/main.c` differs from upstream in a few places:
 
-By default, this launcher uses **libsecret** to store your account password securely.
+- **Login rewritten** to call `LoginAction`, then `GetAccountInfoAction`,
+  `GetAuthKeyAction`, and `GetCharacterCountAction` in sequence on the same
+  session cookie, matching what Arun Kai's own web launcher does. Also
+  URL-encodes the submitted password (the original sent it raw).
+- **Game path conversion fixed** — the path handed to the game process now
+  gets its Unix-style slashes converted to Windows-style backslashes before
+  being passed to `CreateProcessA` inside Wine; without this, the game
+  failed to launch with a "file not found" error despite the file existing.
+- **`vkd3d` and `corefonts` removed** from the winetricks verb list in
+  `prepare_wineprefix` — both verbs fail against currently-available
+  download sources, and winetricks aborts its entire batch on the first
+  failed verb, which was silently preventing `vcrun2022`, `ucrtbase2019`,
+  and `dxvk` from ever installing. TERA doesn't need vkd3d (it's a DX9
+  game), so dropping it is harmless.
+- **Restored `WINEDEBUG` output** (was hardcoded to `-all`, i.e. fully
+  silenced) so Wine-side errors are visible in the terminal if something
+  goes wrong.
 
-* **If no secrets provider is available**, password storage will simply be disabled and you’ll need to re‑enter your password each run.
-* **On platforms without a secrets service** (e.g., Steam Deck), you can force plaintext storage by setting:
+If you're adapting this fork for a *different* TERA private server, check
+whether it uses the single-endpoint `LauncherLoginAction` style the
+original project was built for, or the four-call style Arun Kai uses — the
+login code here assumes the latter.
 
-  ```bash
-  export TL4L_ENABLE_PLAINTEXT_PASSWORD_STORAGE=1
-  ```
+## Credit
 
-  > ⚠️ **Warning:** Plaintext storage is not secure.
-  >
-  > **In Steam:** If you add the launcher as a “Non‑Steam Game,” open its **Properties → Launch Options**, and prepend:
-  >
-  > ```
-  > TL4L_ENABLE_PLAINTEXT_PASSWORD_STORAGE=1 %command%
-  > ```
-
-You can customize the taskbar icon for the AppImage by replacing `appimage/assets/tera-launcher.png` with a 512×512 PNG of your choice. Do this before building the AppImage.
-
----
-
-## License
-
-All code in this repo is licensed under the WTFPL license. See `COPYING` and `COPYING.WTFPL` for details.
-
----
-
-## Disclaimer
-
-**TERA Launcher for Linux** is **not** endorsed by nor affiliated with the publishers of TERA Online. The original proprietary Windows launcher assets remain the property of their respective owners. Use of the game client is subject to the **TERA Online Terms of Service** and **End User License Agreement**. By using this launcher, you agree to abide by all respective legal agreements.
-
-This software is offered purely **for educational purposes** and to give Linux users a convenient way to launch the game. Any misuse or violation of the publisher’s policies is the sole responsibility of the end user.
+Built on [PopusBenedictus/tera-launcher-for-linux](https://github.com/PopusBenedictus/tera-launcher-for-linux).
+See `COPYING`/`COPYING.WTFPL` for license terms.
