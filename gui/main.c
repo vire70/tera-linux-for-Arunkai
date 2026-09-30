@@ -1992,6 +1992,50 @@ static void game_wine_env_thread_watcher(GPid pid, gint wait_status,
  * task.
  */
 static bool prepare_wineprefix(gchar **envp, UpdateThreadData *thread_data) {
+    /* GE-Proton normally seeds default_pfx (vkd3d DLLs, etc.) into a fresh
+     * prefix via its own launcher script; since we invoke wine directly,
+     * that step never runs. Copy the missing pieces in manually. */
+    if (wine_base_dir_global && *wine_base_dir_global && wineprefix_global &&
+        *wineprefix_global) {
+        const struct { const char *sub; const char *dll; } seed_files[] = {
+            {"system32", "libvkd3d-1.dll"},
+            {"system32", "libvkd3d-shader-1.dll"},
+            {"syswow64", "libvkd3d-1.dll"},
+            {"syswow64", "libvkd3d-shader-1.dll"},
+        };
+
+    for (size_t i = 0; i < G_N_ELEMENTS(seed_files); i++) {
+        gchar *dst = g_build_filename(wineprefix_global, "drive_c", "windows",
+                                      seed_files[i].sub, seed_files[i].dll,
+                                      nullptr);
+
+        if (!g_file_test(dst, G_FILE_TEST_EXISTS)) {
+            gchar *src = g_build_filename(
+                wine_base_dir_global, "share", "default_pfx", "drive_c",
+                "windows", seed_files[i].sub, seed_files[i].dll, nullptr);
+
+            if (g_file_test(src, G_FILE_TEST_EXISTS)) {
+                GError *copy_err = nullptr;
+                GFile *src_f = g_file_new_for_path(src);
+                GFile *dst_f = g_file_new_for_path(dst);
+                if (!g_file_copy(src_f, dst_f, G_FILE_COPY_OVERWRITE, nullptr,
+                    nullptr, nullptr, &copy_err)) {
+                    g_warning("Failed to seed %s: %s", dst,
+                              copy_err ? copy_err->message : "unknown error");
+                    if (copy_err)
+                        g_error_free(copy_err);
+                    }
+                    g_object_unref(src_f);
+                g_object_unref(dst_f);
+            }
+            g_free(src);
+        }
+        g_free(dst);
+    }
+    g_message("DEBUG seed check: wine_base_dir_global=[%s] wineprefix_global=[%s]",
+              wine_base_dir_global, wineprefix_global);
+        }
+
   gchar *winetricks = g_find_program_in_path("winetricks");
   if (!winetricks) {
     g_warning("Failed to find winetricks");
