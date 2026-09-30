@@ -1,9 +1,9 @@
-# TERA Linux Launcher — Arun Kai Edition
+# TERA Linux Launcher — Arunkai Edition
 
-A native Linux launcher for the **Arun Kai** TERA private server, forked from
+A native Linux launcher for the **Arunkai** TERA private server, forked from
 [PopusBenedictus/tera-launcher-for-linux](https://github.com/PopusBenedictus/tera-launcher-for-linux)
 (archived, WTFPL license). This fork bundles a working `launcher-config.json`
-for Arun Kai and fixes several issues that prevented the original from
+for Arunkai and fixes several issues that prevented the original from
 working against this specific server.
 
 ## What this gets you
@@ -51,7 +51,7 @@ will be sitting in the repo root.
    (Not the `Binaries` folder itself — the folder that
    directly contains `Binaries`.)
 
-3. Run the AppImage again, log in with your Arun Kai account, and hit **Play**.
+3. Run the AppImage again, log in with your Arunkai account, and hit **Play**.
 
 ## Notes
 
@@ -70,12 +70,12 @@ will be sitting in the repo root.
 ## Changes from upstream
 
 The original project assumes a single-call login endpoint
-(`LauncherLoginAction`). Arun Kai's server uses a different, multi-step
+(`LauncherLoginAction`). Arunkai's server uses a different, multi-step
 flow, so this fork's `gui/main.c` differs from upstream in a few places:
 
 - **Login rewritten** to call `LoginAction`, then `GetAccountInfoAction`,
   `GetAuthKeyAction`, and `GetCharacterCountAction` in sequence on the same
-  session cookie, matching what Arun Kai's own web launcher does. Also
+  session cookie, matching what Arunkai's own web launcher does. Also
   URL-encodes the submitted password (the original sent it raw).
 - **Game path conversion fixed** — the path handed to the game process now
   gets its Unix-style slashes converted to Windows-style backslashes before
@@ -93,7 +93,7 @@ flow, so this fork's `gui/main.c` differs from upstream in a few places:
 
 If you're adapting this fork for a *different* TERA private server, check
 whether it uses the single-endpoint `LauncherLoginAction` style the
-original project was built for, or the four-call style Arun Kai uses — the
+original project was built for, or the four-call style Arunkai uses — the
 login code here assumes the latter.
 
 ## Credit
