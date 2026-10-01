@@ -96,6 +96,51 @@ whether it uses the single-endpoint `LauncherLoginAction` style the
 original project was built for, or the four-call style Arunkai uses — the
 login code here assumes the latter.
 
+## TERA Toolbox (optional)
+
+[TERA Toolbox](https://github.com/tera-private-toolbox/tera-toolbox) adds
+client-side mods (auto-loot, bugfix, FPS tweaks, etc.) via a local network
+proxy. This launcher can start it automatically before the game.
+
+**Important:** use the **private-server fork**
+(`tera-private-toolbox/tera-toolbox`), not the official upstream one — the
+official release doesn't have an opcode map for Arun Kai's protocol
+version and every mod will fail silently with "unmapped packet" errors in
+Toolbox's own log.
+
+### Installing Toolbox
+
+1. Download the **Setup** release from the
+   [private-toolbox releases page](https://github.com/tera-private-toolbox/tera-toolbox/releases).
+2. Rename it from `TeraToolboxSetup.exe` to `TeraToolbox.exe` (the launcher
+   looks for this exact filename) and place it in its own folder, e.g.
+   `/path/to/TERA-Toolbox/TeraToolbox.exe`.
+3. Edit `~/.arunkai-tera/config/tera-launcher-config.ini` and set:
+```ini
+   use_tera_toolbox=true
+   tera_toolbox_path=/path/to/TERA-Toolbox
+```
+   (point at the **folder**, not the `.exe`. **Note**: You will have to add
+   "tera_toolbox_path=" as a line yourself.)
+   
+4. Launch as normal. On first run, Toolbox will install itself into that
+   folder and may prompt that it's "already installed, continue anyway?"
+   — choose **yes** (declining cancels the install and it won't run). This
+   install prompt currently reappears on every launch; it's cosmetic and
+   safe to click through, just make sure you always pick default location and to launch after install.
+5. Once installed, Toolbox opens its own window where you can enable/
+   disable individual mods before playing.
+
+### Known quirks
+
+- **Startup can pause for up to a minute or two** with the terminal
+  repeating `RtlpWaitForCriticalSection ... wait timed out`. This is two
+  Wine processes (Toolbox and the game) briefly contending for the same
+  prefix on startup — it resolves on its own; just wait it out.
+- Server select will show both the normal server and a second
+  `(Toolbox)` entry — pick the `(Toolbox)` one to actually route through
+  the proxy and get mod functionality.
+
 ## Credit
 
 Built on [PopusBenedictus/tera-launcher-for-linux](https://github.com/PopusBenedictus/tera-launcher-for-linux).
